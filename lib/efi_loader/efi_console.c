@@ -185,56 +185,32 @@ static bool cout_mode_matches(struct cout_mode *mode, int rows, int cols)
 	return (mode->rows == rows) && (mode->columns == cols);
 }
 
-/**
- * query_console_serial() - query console size
- *
- * @rows	pointer to return number of rows
- * @columns	pointer to return number of columns
- * Returns	0 on success
- */
 static int query_console_serial(int *rows, int *cols)
 {
-	int ret = 0;
-	int n[2];
+	/* Ask the terminal about its size */
+	int n[3];
 	u64 timeout;
 
 	/* Empty input buffer */
 	while (tstc())
 		getc();
 
-	/*
-	 * Not all terminals understand CSI [18t for querying the console size.
-	 * We should adhere to escape sequences documented in the console_codes
-	 * man page and the ECMA-48 standard.
-	 *
-	 * So here we follow a different approach. We position the cursor to the
-	 * bottom right and query its position. Before leaving the function we
-	 * restore the original cursor position.
-	 */
-	printf(ESC "7"		/* Save cursor position */
-	       ESC "[r"		/* Set scrolling region to full window */
-	       ESC "[999;999H"	/* Move to bottom right corner */
-	       ESC "[6n");	/* Query cursor position */
+	printf(ESC"[18t");
 
-	/* Allow up to one second for a response */
+	/* Check if we have a terminal that understands */
 	timeout = timer_get_us() + 1000000;
 	while (!tstc())
-		if (timer_get_us() > timeout) {
-			ret = -1;
-			goto out;
-		}
+		if (timer_get_us() > timeout)
+			return -1;
 
-	/* Read {rows,cols} */
-	if (term_read_reply(n, 2, 'R')) {
-		ret = 1;
-		goto out;
-	}
+	/* Read {depth,rows,cols} */
+	if (term_read_reply(n, 3, 't'))
+		return -1;
 
-	*cols = n[1];
-	*rows = n[0];
-out:
-	printf(ESC "8");	/* Restore cursor position */
-	return ret;
+	*cols = n[2];
+	*rows = n[1];
+
+	return 0;
 }
 
 /*
